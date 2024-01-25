@@ -13,7 +13,7 @@ var (
 		Required: true,
 	}
 	apiListenAddrFlag = &cli.StringFlag{
-		Name:  "addr",
+		Name:  "api-addr",
 		Usage: "Listening address",
 		Value: "0.0.0.0:10000",
 	}
@@ -50,7 +50,7 @@ var (
 		Usage: "geoip2 database location",
 	}
 	listenAddrFlag = &cli.StringFlag{
-		Name:  "addr",
+		Name:  "crawler-addr",
 		Usage: "Listening address",
 		Value: "0.0.0.0:0",
 	}

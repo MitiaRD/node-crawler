@@ -120,10 +120,11 @@ func crawlNodes(ctx *cli.Context) error {
 		Sepolia:    ctx.Bool(utils.SepoliaFlag.Name),
 		Goerli:     ctx.Bool(utils.GoerliFlag.Name),
 		NodeDB:     nodeDB,
+		CrawlerDB:  db,
 	}
 
 	for {
-		updatedSet := crawler.CrawlRound(inputSet, db, geoipDB)
+		updatedSet := crawler.CrawlRound(inputSet, geoipDB)
 		if nodesFile != "" {
 			updatedSet.WriteNodesJSON(nodesFile)
 		}

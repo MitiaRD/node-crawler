@@ -18,6 +18,7 @@ package crawler
 
 import (
 	"database/sql"
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -43,7 +44,8 @@ type Crawler struct {
 	Sepolia    bool
 	Goerli     bool
 
-	NodeDB *enode.DB
+	NodeDB    *enode.DB
+	CrawlerDB *sql.DB
 }
 
 type crawler struct {
@@ -102,6 +104,7 @@ func NewCrawler(
 	// Copy input to output initially. Any nodes that fail validation
 	// will be dropped from output during the run.
 	for id, n := range input {
+		log.Info("creating new crawler output ID: ", id.String(), n)
 		c.output[id] = n
 	}
 	return c
@@ -130,6 +133,7 @@ loop:
 	for {
 		select {
 		case n := <-c.ch:
+			fmt.Printf(fmt.Sprintf("received node from channel: %v\n", n))
 			c.updateNode(n)
 		case it := <-doneCh:
 			if it == c.inputIter {
@@ -266,11 +270,13 @@ func (c *crawler) updateNode(n *enode.Node) {
 
 func (c Crawler) CrawlRound(
 	inputSet common.NodeSet,
-	db *sql.DB,
 	geoipDB *geoip2.Reader,
 ) common.NodeSet {
 	var v4, v5 common.NodeSet
 	var wg sync.WaitGroup
+	log.Info(" ============================== ")
+	log.Info(fmt.Sprintf("input Set : %v", inputSet))
+	log.Info(" ============================== ")
 
 	wg.Add(1)
 	go func() {
@@ -290,6 +296,7 @@ func (c Crawler) CrawlRound(
 
 	output := make(common.NodeSet, len(v5)+len(v4))
 	for _, n := range v5 {
+		log.Info(fmt.Sprintf("n.N.ID(): %v", n.N.ID()))
 		output[n.N.ID()] = n
 	}
 	for _, n := range v4 {
@@ -302,8 +309,8 @@ func (c Crawler) CrawlRound(
 	}
 
 	// Write the node info to influx
-	if db != nil {
-		if err := crawlerdb.UpdateNodes(db, geoipDB, nodes); err != nil {
+	if c.CrawlerDB != nil {
+		if err := crawlerdb.UpdateNodes(c.CrawlerDB, geoipDB, nodes); err != nil {
 			panic(err)
 		}
 	}
@@ -352,12 +359,18 @@ func (c Crawler) runCrawler(disc resolver, inputSet common.NodeSet) common.NodeS
 // makeGenesis is the pendant to utils.MakeGenesis
 // with local flags instead of global flags.
 func (c Crawler) makeGenesis() *core.Genesis {
+	var b *core.Genesis
 	if c.Sepolia {
-		return core.DefaultSepoliaGenesisBlock()
+		b = core.DefaultSepoliaGenesisBlock()
+		//log.Info(fmt.Sprintf("returning sepolia genesis block: %v", b))
+		return b
 	}
 	if c.Goerli {
-		return core.DefaultGoerliGenesisBlock()
+		b = core.DefaultGoerliGenesisBlock()
+		//log.Info(fmt.Sprintf("returning Goerli genesis block: %v", b))
+		return b
 	}
-
-	return core.DefaultGenesisBlock()
+	b = core.DefaultGenesisBlock()
+	//log.Info(fmt.Sprintf("returning default genesis block: %v", b))
+	return b
 }

@@ -2,6 +2,7 @@ package crawler
 
 import (
 	"fmt"
+	"github.com/ethereum/go-ethereum/log"
 	"net"
 
 	"github.com/ethereum/go-ethereum/crypto"
@@ -33,10 +34,12 @@ func (c Crawler) makeDiscoveryConfig() (*enode.LocalNode, discover.Config) {
 }
 
 func listen(ln *enode.LocalNode, addr string) *net.UDPConn {
+	log.Info("listen: addr: ", addr)
 	socket, err := net.ListenPacket("udp4", addr)
 	if err != nil {
 		panic(err)
 	}
+	log.Info("listen was ok ", addr)
 	usocket := socket.(*net.UDPConn)
 	uaddr := socket.LocalAddr().(*net.UDPAddr)
 	if uaddr.IP.IsUnspecified() {

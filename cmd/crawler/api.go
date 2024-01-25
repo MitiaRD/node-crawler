@@ -3,6 +3,9 @@ package main
 import (
 	"database/sql"
 	"fmt"
+	"github.com/ethereum/go-ethereum/cmd/utils"
+	"github.com/ethereum/go-ethereum/p2p/enode"
+	"github.com/ethereum/node-crawler/pkg/crawler"
 	"os"
 	"sync"
 	"time"
@@ -28,16 +31,29 @@ var (
 			busyTimeoutFlag,
 			crawlerDBFlag,
 			dropNodesTimeFlag,
+			listenAddrFlag,
+			bootnodesFlag,
+			geoipdbFlag,
+			nodeFileFlag,
+			nodeURLFlag,
+			nodedbFlag,
+			nodekeyFlag,
+			timeoutFlag,
+			workersFlag,
+			utils.GoerliFlag,
+			utils.NetworkIdFlag,
+			utils.SepoliaFlag,
 		},
 	}
 )
 
 func startAPI(ctx *cli.Context) error {
 	var (
-		crawlerDBPath = ctx.String(crawlerDBFlag.Name)
-		apiDBPath     = ctx.String(apiDBFlag.Name)
-		autovacuum    = ctx.String(autovacuumFlag.Name)
-		busyTimeout   = ctx.Uint64(busyTimeoutFlag.Name)
+		crawlerDBPath        = ctx.String(crawlerDBFlag.Name)
+		apiDBPath            = ctx.String(apiDBFlag.Name)
+		autovacuum           = ctx.String(autovacuumFlag.Name)
+		busyTimeout          = ctx.Uint64(busyTimeoutFlag.Name)
+		crawlerListeningAddr = ctx.String(listenAddrFlag.Name)
 	)
 
 	crawlerDB, err := openSQLiteDB(
@@ -68,6 +84,26 @@ func startAPI(ctx *cli.Context) error {
 		}
 	}
 
+	enodeDB, err := enode.OpenDB(ctx.String(nodedbFlag.Name))
+	if err != nil {
+		panic(err)
+	}
+
+	crawler := crawler.Crawler{
+		NetworkID:  ctx.Uint64(utils.NetworkIdFlag.Name),
+		NodeURL:    ctx.String(nodeURLFlag.Name),
+		ListenAddr: crawlerListeningAddr,
+		NodeKey:    ctx.String(nodekeyFlag.Name),
+		Bootnodes:  ctx.StringSlice(bootnodesFlag.Name),
+		Timeout:    ctx.Duration(timeoutFlag.Name),
+		Workers:    ctx.Uint64(workersFlag.Name),
+		Sepolia:    ctx.Bool(utils.SepoliaFlag.Name),
+		Goerli:     ctx.Bool(utils.GoerliFlag.Name),
+		NodeDB:     enodeDB,
+		CrawlerDB:  crawlerDB,
+	}
+	log.Info(fmt.Sprintf("1. crawler listen address: %v : %v", crawler.ListenAddr, ctx.String(listenAddrFlag.Name)))
+
 	// Start daemons
 	var wg sync.WaitGroup
 	wg.Add(3)
@@ -77,16 +113,19 @@ func startAPI(ctx *cli.Context) error {
 		defer wg.Done()
 		newNodeDaemon(crawlerDB, nodeDB)
 	}()
+
 	// Start the drop daemon
 	go func() {
 		defer wg.Done()
 		dropDaemon(nodeDB, ctx.Duration(dropNodesTimeFlag.Name))
 	}()
+
 	// Start the API deamon
 	apiAddress := ctx.String(apiListenAddrFlag.Name)
-	apiDaemon := api.New(apiAddress, nodeDB)
+	apiDaemon := api.New(apiAddress, nodeDB, crawler)
 	go func() {
 		defer wg.Done()
+		log.Info(fmt.Sprintf("2. crawler listen address: %v", &apiDaemon.Crawler.ListenAddr))
 		apiDaemon.HandleRequests()
 	}()
 	wg.Wait()

@@ -4,6 +4,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/ethereum/go-ethereum/p2p/enode"
+	"github.com/ethereum/node-crawler/pkg/common"
+	"github.com/ethereum/node-crawler/pkg/crawler"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -17,9 +21,10 @@ type Api struct {
 	address string
 	cache   *lru.Cache
 	db      *sql.DB
+	Crawler crawler.Crawler
 }
 
-func New(address string, sdb *sql.DB) *Api {
+func New(address string, sdb *sql.DB, crawler crawler.Crawler) *Api {
 	cache, err := lru.New(256)
 	if err != nil {
 		return nil
@@ -29,6 +34,7 @@ func New(address string, sdb *sql.DB) *Api {
 		address: address,
 		cache:   cache,
 		db:      sdb,
+		Crawler: crawler,
 	}
 	go api.dropCacheLoop()
 
@@ -53,6 +59,7 @@ func (a *Api) HandleRequests() {
 	router.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("Hello")) })
 	router.HandleFunc("/v1/dashboard", a.handleDashboard).Queries("filter", "{filter}")
 	router.HandleFunc("/v1/dashboard", a.handleDashboard)
+	router.HandleFunc("/v1/crawl", a.handleCrawlNode).Methods("POST")
 	log.Info("Starting API", "address", a.address)
 	http.ListenAndServe(a.address, router)
 }
@@ -321,4 +328,37 @@ func validateKey(key string) bool {
 	}
 	_, ok := validKeys[key]
 	return ok
+}
+
+type crawlNodeBody struct {
+	Enode string `json:"enode"`
+}
+
+func (a *Api) handleCrawlNode(rw http.ResponseWriter, r *http.Request) {
+	b, err := io.ReadAll(r.Body)
+	defer r.Body.Close()
+	if err != nil {
+		http.Error(rw, err.Error(), 500)
+		return
+	}
+
+	var enodeMsg crawlNodeBody
+	err = json.Unmarshal(b, &enodeMsg)
+	if err != nil {
+		http.Error(rw, err.Error(), 500)
+		return
+	}
+	nodeURL := enodeMsg.Enode
+	log.Info(fmt.Sprintf("enode message: %v : %v\n", nodeURL, enodeMsg))
+	node, err := enode.ParseV4(nodeURL)
+	if err != nil {
+		log.Error("failed to parse input ID: ", err.Error())
+		return
+	}
+	inputSet := make(common.NodeSet)
+	inputSet[node.ID()] = common.NodeJSON{
+		N: node,
+	}
+	updatedSet := a.Crawler.CrawlRound(inputSet, nil)
+	rw.Write([]byte(fmt.Sprintf("return response: %v", updatedSet)))
 }
